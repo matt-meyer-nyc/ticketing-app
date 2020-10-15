@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { Password } from '../services/password';
 
 // an interface that describes the properties that are required to create a new user
 interface UserAttrs {
@@ -18,18 +19,45 @@ interface UserDoc extends mongoose.Document {
   password: string;
 }
 
-const userSchema = new mongoose.Schema({
-  // note this is all tied to Mongoose (i.e. NOT related to TS)
-  email: {
-    // with mongoose type is capitalized b/c referring to an actual constructor method
-    type: String,
-    required: true,
+const userSchema = new mongoose.Schema(
+  {
+    // note this is all tied to Mongoose (i.e. NOT related to TS)
+    email: {
+      // with mongoose type is capitalized b/c referring to an actual constructor method
+      type: String,
+      required: true,
+    },
+    password: {
+      type: String,
+      required: true,
+    },
   },
-  password: {
-    type: String,
-    required: true,
-  },
+  {
+    toJSON: {
+      transform(doc, ret) {
+        ret.id = ret._id;
+        delete ret._id;
+        // plain JS; remove password property
+        delete ret.password;
+        delete ret.__v;
+      },
+    },
+  }
+);
+
+// save is middleware function from mongoose, whenever use, implement the callback function
+// done needs to be called after everything b/c Mongoose still not up to date w/ async/await out of the box
+// note usage of declaring 'function' and not using arrow function....makes sure we can use 'this' here (otherwise this would referenced context of entire file as opposed to User document)
+userSchema.pre('save', async function (done) {
+  // ensure don't hash already hashed pw (when user first creates password is considred modified)
+  // hash pw if modified
+  if (this.isModified('password')) {
+    const hashed = await Password.toHash(this.get('password'));
+    this.set('password', hashed);
+  }
+  done();
 });
+
 // this allows adding .build custom function to User model w/ TS check included (as way to optimize instead of using buildUser function referenced below and having to export it)
 // add build function to schema using statics
 userSchema.statics.build = (attrs: UserAttrs) => {
